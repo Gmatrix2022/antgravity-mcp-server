@@ -1,5 +1,9 @@
 # 🌌 AntGravity MCP Server
 
+<p align="center">
+  <img src="logo.png" width="320" alt="AntGravity MCP Logo">
+</p>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
 [![Model Context Protocol](https://img.shields.io/badge/MCP-Supported-orange.svg)](https://modelcontextprotocol.io/)
