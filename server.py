@@ -108,6 +108,31 @@ from windows_mcp.tools import register_all
 register_all(mcp, get_desktop=get_desktop, get_analytics=get_analytics)
 logger.info("windows_mcp 的 18 个核心 OS 交互工具已成功注册至 antgravity_mcp 实例！")
 
+# ── 注册 Phase 5 新工具 ──────────────────────────────────────────────────────
+from tools.stream_tools import (
+    ag_record_step, ag_get_current_status, ag_get_step_history, ag_accept_action
+)
+from tools.kanban_tools import (
+    ag_kanban_create, ag_kanban_update, ag_kanban_comment, ag_kanban_complete,
+    ag_kanban_list, ag_kanban_get
+)
+
+# ── 注册 Stream 相关的 4 个工具 ──
+mcp.tool(name="ag_record_step")(ag_record_step)
+mcp.tool(name="ag_get_current_status")(ag_get_current_status)
+mcp.tool(name="ag_get_step_history")(ag_get_step_history)
+mcp.tool(name="ag_accept_action")(ag_accept_action)
+
+# ── 注册 Kanban 相关的 6 个工具 ──
+mcp.tool(name="ag_kanban_create")(ag_kanban_create)
+mcp.tool(name="ag_kanban_update")(ag_kanban_update)
+mcp.tool(name="ag_kanban_comment")(ag_kanban_comment)
+mcp.tool(name="ag_kanban_complete")(ag_kanban_complete)
+mcp.tool(name="ag_kanban_list")(ag_kanban_list)
+mcp.tool(name="ag_kanban_get")(ag_kanban_get)
+
+logger.info("Phase 5 流与看板管理的 10 个新工具已成功注册至 antgravity_mcp 实例！")
+
 
 # ── 辅助：环境探测 ────────────────────────────────────────────────────────
 def _detect_version(cmd: list[str]) -> Optional[str]:
