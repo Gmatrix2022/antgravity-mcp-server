@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AntGravity MCP Server — 会话记录</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3250;
+    --accent: #6c8efb;
+    --accent2: #a78bfa;
+    --green: #34d399;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --code-bg: #131720;
+    --font: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.7;
+    padding: 0 0 60px;
+  }
+
+  /* Header */
+  header {
+    background: linear-gradient(135deg, #1a1d27 0%, #0f1117 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 32px 48px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+  header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.3px;
+  }
+  header .meta {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  header .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(52,211,153,0.12);
+    color: var(--green);
+    border: 1px solid rgba(52,211,153,0.3);
+    border-radius: 20px;
+    padding: 2px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 8px;
+  }
+
+  /* Layout */
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 24px;
+  }
+
+  /* Section */
+  .section {
+    margin-bottom: 48px;
+  }
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Status Grid */
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .status-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    transition: border-color 0.2s;
+  }
+  .status-card:hover { border-color: var(--accent); }
+  .status-card .label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .status-card .value { font-size: 14px; font-weight: 600; }
+  .ok { color: var(--green); }
+  .warn { color: var(--yellow); }
+  .err { color: var(--red); }
+
+  /* Chat messages */
+  .message {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 28px;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+  .message.user { flex-direction: row-reverse; }
+  .avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+    font-weight: 700;
+  }
+  .avatar.ai { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+  .avatar.user { background: var(--surface2); color: var(--accent2); border: 1px solid var(--border); }
+  .bubble {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 18px;
+    max-width: 78%;
+    line-height: 1.75;
+  }
+  .message.user .bubble {
+    background: var(--surface2);
+    border-color: var(--accent);
+    text-align: right;
+  }
+  .bubble code {
+    font-family: var(--mono);
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 12px;
+    color: #a5f3fc;
+  }
+  .bubble pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 10px 0;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: #a5f3fc;
+    line-height: 1.6;
+  }
+  .bubble pre .green { color: var(--green); }
+  .bubble pre .yellow { color: var(--yellow); }
+  .bubble strong { color: var(--accent2); font-weight: 600; }
+  .bubble p { margin-bottom: 8px; }
+  .bubble p:last-child { margin-bottom: 0; }
+
+  /* Tool tag */
+  .tool-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(108,142,251,0.1);
+    color: var(--accent);
+    border: 1px solid rgba(108,142,251,0.3);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: var(--mono);
+    margin: 2px;
+  }
+
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 12px 0;
+  }
+  th {
+    background: var(--surface2);
+    color: var(--accent);
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* Timeline */
+  .timeline {
+    position: relative;
+    padding-left: 24px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    background: var(--border);
+  }
+  .tl-item {
+    position: relative;
+    margin-bottom: 20px;
+    padding-left: 20px;
+  }
+  .tl-item::before {
+    content: '';
+    position: absolute;
+    left: -19px;
+    top: 6px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+  }
+  .tl-item.done::before { background: var(--green); }
+  .tl-item.pending::before { background: var(--yellow); }
+  .tl-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+  .tl-desc { color: var(--muted); font-size: 12px; }
+
+  /* Checklist */
+  .checklist { list-style: none; }
+  .checklist li {
+    padding: 6px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .checklist li:last-child { border-bottom: none; }
+  .check-icon { flex-shrink: 0; margin-top: 2px; }
+
+  /* Timestamp */
+  .ts {
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  /* Footer */
+  .footer {
+    border-top: 1px solid var(--border);
+    padding: 24px 48px;
+    color: var(--muted);
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 60px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ AntGravity MCP Server — 会话记录</h1>
+  <div class="meta">Conversation ID: f8c25bc1-eb4d-4286-89de-4ecb5600c48d</div>
+  <div class="badge">✅ Phase 1 完成</div>
+</header>
+
+<div class="container">
+
+  <!-- 当前状态 -->
+  <div class="section">
+    <div class="section-title">当前状态</div>
+    <div class="status-grid">
+      <div class="status-card">
+        <div class="label">服务端口</div>
+        <div class="value ok">:9000</div>
+      </div>
+      <div class="status-card">
+        <div class="label">/health 端点</div>
+        <div class="value ok">✅ 200 OK</div>
+      </div>
+      <div class="status-card">
+        <div class="label">/mcp 端点</div>
+        <div class="value ok">✅ MCP 握手成功</div>
+      </div>
+      <div class="status-card">
+        <div class="label">跨主机访问</div>
+        <div class="value ok">✅ 192.168.0.124:9000</div>
+      </div>
+      <div class="status-card">
+        <div class="label">Hermes Config</div>
+        <div class="value ok">✅ antgravity-mcp 已注册</div>
+      </div>
+      <div class="status-card">
+        <div class="label">开机自启</div>
+        <div class="value ok">✅ 启动文件夹</div>
+      </div>
+      <div class="status-card">
+        <div class="label">MCP 工具调用测试</div>
+        <div class="value warn">⬜ 待 Hermes 执行</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 工具清单 -->
+  <div class="section">
+    <div class="section-title">工具清单（Phase 1 · 共 6 个）</div>
+    <table>
+      <thead>
+        <tr><th>#</th><th>工具名</th><th>类型</th><th>功能</th><th>关键约束</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td><code>ag_health_check</code></td>
+          <td>只读</td>
+          <td>返回 Windows 环境状态（Python/Git/Java/Android SDK）</td>
+          <td>无参数</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td><code>ag_file_read</code></td>
+          <td>只读</td>
+          <td>读取 Windows 文件内容</td>
+          <td>白名单目录，≤512KB</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td><code>ag_file_write</code></td>
+          <td>写入</td>
+          <td>写入/创建 Windows 文件（自动建目录）</td>
+          <td>白名单目录</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td><code>ag_file_list</code></td>
+          <td>只读</td>
+          <td>列出目录，支持 glob + 递归</td>
+          <td>最多 500 条</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td><code>ag_file_exists</code></td>
+          <td>只读</td>
+          <td>检查路径存在 + 类型（file/dir/none）</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td><code>ag_powershell</code></td>
+          <td>执行</td>
+          <td>执行 PowerShell（非管理员）</td>
+          <td>黑名单过滤，超时 1-600s</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top: 12px; font-size: 12px; color: var(--muted);">
+      📂 白名单目录：<code>D:\Obsidian\sync\task\</code>、<code>D:\dev\</code>、<code>D:\AndroidProjects\</code>
+    </div>
+  </div>
+
+  <!-- 关键决策 -->
+  <div class="section">
+    <div class="section-title">本次会话关键决策</div>
+
+    <div class="message">
+      <div class="avatar user">U</div>
+      <div>
+        <div class="ts">继续之前的任务，MCP服务咕咕</div>
+        <div class="bubble">继续之前的任务，MCP 服务咕咕</div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar ai">AG</div>
+      <div>
+        <div class="ts">读取 WORKLOG.md → 确认上次遗留：lifespan 修复已写入 server.py 但未重启验证</div>
+        <div class="bubble">
+          <p>从 WORKLOG.md 确认上次断点：<code>/mcp</code> 端点 500 的修复代码已写入但<strong>未重启验证</strong>。立即启动 server 验证。</p>
+          <pre><span class="green">INFO</span>:     StreamableHTTP session manager started
+<span class="green">INFO</span>:     Application startup complete.
+<span class="green">INFO</span>:     Uvicorn running on http://0.0.0.0:9000</pre>
+          <p>验证结果：</p>
+          <pre><span class="green"># /health → 200 OK</span>
+{"ok":true,"service":"antgravity-mcp","version":"0.1.0","port":9000}
+
+<span class="green"># /mcp initialize → MCP 握手成功</span>
+{"protocolVersion":"2024-11-05","serverInfo":{"name":"antgravity_mcp","version":"1.27.0"}}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar user">U</div>
+      <div>
+        <div class="ts">查看 config.yaml 后提问</div>
+        <div class="bubble">Hermes config？你动了什么</div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar ai">AG</div>
+      <div>
+        <div class="bubble">
+          <p>在 <code>mcp_servers</code> 块末尾添加了 <code>antgravity-mcp</code> 条目（这是 STATUS.md 待执行列表第一项）：</p>
+          <pre>antgravity-mcp:
+  url: http://192.168.0.124:9000/mcp
+  transport: streamable-http
+  connect_timeout: 15
+  timeout: 120
+  enabled: true</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar user">U</div>
+      <div>
+        <div class="bubble">http://192.168.0.124 这个用环境变量更好吧</div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar ai">AG</div>
+      <div>
+        <div class="bubble">
+          <p>发现 <code>docker-compose.yml</code> 里已有 <code>HOST_IP=${HOST_IP}</code> 注入容器。检查 Hermes 源码确认：</p>
+          <pre># /opt/hermes/config.py
+with open(config_path, encoding="utf-8") as f:
+    data = yaml.safe_load(f) or {}   # 无 expandvars</pre>
+          <p><strong>结论：Hermes config.yaml 不支持环境变量展开，IP 只能硬编码。</strong></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar user">U</div>
+      <div>
+        <div class="bubble">好</div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar ai">AG</div>
+      <div>
+        <div class="bubble">
+          <p>继续处理开机自启。Task Scheduler 需要管理员权限失败，改用启动文件夹（无需管理员）：</p>
+          <pre><span class="green">✅ 快捷方式已创建：</span>
+C:\Users\keche\AppData\Roaming\Microsoft\Windows\
+  Start Menu\Programs\Startup\AntGravity-MCP.lnk</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar user">U</div>
+      <div>
+        <div class="bubble">这个MCP 有多少个操作，你写好说明书了吗，如何让 hermes 测试</div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar ai">AG</div>
+      <div>
+        <div class="bubble">
+          <p>共 <strong>6 个工具</strong>。完整说明书写入 <code>docs/TOOL-SPEC.md</code>。</p>
+          <p>测试方法：<code>docker restart hermes</code> → Hermes 对话中 <code>/mcp</code> 确认连接 → 自然语言触发工具调用。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar user">U</div>
+      <div>
+        <div class="bubble">你在 task 下的当前项目文件夹下给指令md，我让 hermes 去取</div>
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="avatar ai">AG</div>
+      <div>
+        <div class="bubble">
+          <p>创建了 <code>HERMES-TEST.md</code>，容器内路径 <code>/sync/task/antgravity-mcp-server/HERMES-TEST.md</code>。</p>
+          <p>给 Hermes 发：</p>
+          <pre>读取 /sync/task/antgravity-mcp-server/HERMES-TEST.md，
+按文件里的步骤逐一测试 antgravity-mcp 的 6 个工具，
+并把测试报告写入 hermes-test-report.md</pre>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 进度 Timeline -->
+  <div class="section">
+    <div class="section-title">进度追踪</div>
+    <div class="timeline">
+      <div class="tl-item done">
+        <div class="tl-title">✅ Phase 0 — /health 端点</div>
+        <div class="tl-desc">HTTP 200，跨主机 curl 验证通过，防火墙规则 AntGravity MCP 9000</div>
+      </div>
+      <div class="tl-item done">
+        <div class="tl-title">✅ Phase 1 — /mcp 端点修复</div>
+        <div class="tl-desc">lifespan 修复：直接使用 mcp.streamable_http_app() 为主 app，MCP 握手成功</div>
+      </div>
+      <div class="tl-item done">
+        <div class="tl-title">✅ Hermes config 注册</div>
+        <div class="tl-desc">~/.hermes/config.yaml 写入 antgravity-mcp（streamable-http, port 9000）</div>
+      </div>
+      <div class="tl-item done">
+        <div class="tl-title">✅ 开机自启</div>
+        <div class="tl-desc">Windows 启动文件夹快捷方式，登录后自动运行</div>
+      </div>
+      <div class="tl-item done">
+        <div class="tl-title">✅ 文档</div>
+        <div class="tl-desc">TOOL-SPEC.md（完整说明书）+ HERMES-TEST.md（测试指令）</div>
+      </div>
+      <div class="tl-item pending">
+        <div class="tl-title">⬜ MCP 工具调用测试</div>
+        <div class="tl-desc">docker restart hermes → 读取 HERMES-TEST.md → 执行 6 步测试 → 写入报告</div>
+      </div>
+      <div class="tl-item pending">
+        <div class="tl-title">⬜ Phase 2 工具（计划）</div>
+        <div class="tl-desc">ag_git_*、ag_run_gradle、ag_android_build_apk、ag_cdp_*</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 关键文件索引 -->
+  <div class="section">
+    <div class="section-title">关键文件</div>
+    <table>
+      <thead>
+        <tr><th>文件</th><th>容器内路径</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>server.py</code></td>
+          <td>—</td>
+          <td>主入口，Phase 0+1 实现</td>
+        </tr>
+        <tr>
+          <td><code>tools/filesystem_tools.py</code></td>
+          <td>—</td>
+          <td>ag_file_* 4个工具</td>
+        </tr>
+        <tr>
+          <td><code>tools/powershell_tools.py</code></td>
+          <td>—</td>
+          <td>ag_powershell 工具</td>
+        </tr>
+        <tr>
+          <td><code>docs/TOOL-SPEC.md</code></td>
+          <td>—</td>
+          <td>完整工具说明书</td>
+        </tr>
+        <tr>
+          <td><code>HERMES-TEST.md</code></td>
+          <td><code>/sync/task/antgravity-mcp-server/HERMES-TEST.md</code></td>
+          <td>Hermes 测试指令（Step 0-6）</td>
+        </tr>
+        <tr>
+          <td><code>hermes-test-report.md</code></td>
+          <td><code>/sync/task/antgravity-mcp-server/hermes-test-report.md</code></td>
+          <td>待生成：Hermes 测试结果报告</td>
+        </tr>
+        <tr>
+          <td><code>logs/server.log</code></td>
+          <td>—</td>
+          <td>服务运行日志</td>
+        </tr>
+        <tr>
+          <td><code>~/.hermes/config.yaml</code></td>
+          <td><code>/opt/data/config.yaml</code></td>
+          <td>Hermes 配置（含 antgravity-mcp）</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<div class="footer">
+  <span>AntGravity MCP Server · Phase 1</span>
+  <span id="updated">最后更新：2026-05-18 02:25</span>
+</div>
+
+<script>
+  document.getElementById('updated').textContent =
+    '最后更新：' + new Date().toLocaleString('zh-CN', {
+      year:'numeric', month:'2-digit', day:'2-digit',
+      hour:'2-digit', minute:'2-digit'
+    });
+</script>
+</body>
+</html>

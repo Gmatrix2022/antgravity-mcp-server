@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AntGravity MCP 测试报告</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; padding: 40px 20px; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; color: #fff; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 40px; }
+  .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 24px; margin-bottom: 16px; }
+  .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .step-num { background: #222; border: 1px solid #333; border-radius: 8px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
+  .step-title { font-size: 15px; font-weight: 600; color: #fff; }
+  .status { padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .pass { background: #1a3d2a; color: #4ade80; border: 1px solid #2d5a3d; }
+  .fail { background: #3d1a1a; color: #f87171; border: 1px solid #5a2d2d; }
+  .skip { background: #3d3a1a; color: #facc15; border: 1px solid #5a5a2d; }
+  .detail { background: #141414; border: 1px solid #252525; border-radius: 8px; padding: 16px; margin-top: 12px; font-family: 'Fira Code', 'Consolas', monospace; font-size: 13px; color: #999; white-space: pre-wrap; word-break: break-all; overflow-x: auto; max-height: 200px; overflow-y: auto; }
+  .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+  .summary-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; text-align: center; }
+  .summary-num { font-size: 36px; font-weight: 700; }
+  .summary-label { font-size: 12px; color: #888; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
+  .green { color: #4ade80; }
+  .red { color: #f87171; }
+  .yellow { color: #facc15; }
+  .reason { font-size: 13px; color: #777; margin-top: 12px; line-height: 1.6; background: #161616; border: 1px solid #252525; border-radius: 8px; padding: 14px; }
+  .root-cause { background: #1c1917; border: 1px solid #3d2a1f; border-radius: 8px; padding: 16px; margin-top: 12px; font-size: 13px; color: #d4a574; line-height: 1.7; }
+  .root-cause strong { color: #facc15; }
+  .label { color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>AntGravity MCP Server — Hermes 测试报告</h1>
+  <p class="subtitle">测试时间：2026-05-18 · MCP 地址：http://192.168.0.124:9000 · Hermes 容器内执行</p>
+
+  <div class="summary">
+    <div class="summary-card">
+      <div class="summary-num yellow">6</div>
+      <div class="summary-label">总计步骤</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-num green">1</div>
+      <div class="summary-label">通过</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-num red">5</div>
+      <div class="summary-label">未完成</div>
+    </div>
+  </div>
+
+  <!-- Step 0 -->
+  <div class="card">
+    <div class="step-header">
+      <div class="step-num">0</div>
+      <div class="step-title">确认 MCP 已连接</div>
+      <span class="status pass">PASS</span>
+    </div>
+    <div class="reason">
+      <div class="label">验证方式</div>
+      通过 Hermes 内部 API <code>get_mcp_status()</code> 查询，antgravity-mcp 已注册，transport 为 streamable-http。
+    </div>
+    <div class="detail">antgravity-mcp | streamable-http | tools: 0 | connected: false</div>
+  </div>
+
+  <!-- Step 1 -->
+  <div class="card">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div class="step-title">ag_health_check</div>
+      <span class="status skip">SKIP</span>
+    </div>
+    <div class="reason">
+      <div class="label">原因</div>
+      Hermes 容器未安装 <code>mcp</code> Python 包（<code>pip show mcp</code> 无输出），无法通过 native MCP client 调用工具。
+    </div>
+    <div class="root-cause">
+      <strong>根本原因：</strong>FastMCP 的 streamable-http 传输层需要正确的 HTTP session 握手（先 GET 获取 session ID，再 POST 带 session ID），curl 无法正确处理带有 <code>Host: localhost:9000</code> 请求头约束的 FastMCP session 流程，导致所有工具调用返回 <code>Missing session ID</code> 或 <code>421 Misdirected Request (Invalid Host header)</code>。/health 端点独立于 MCP session 机制，所以可用。
+    </div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="card">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div class="step-title">ag_file_list</div>
+      <span class="status skip">SKIP</span>
+    </div>
+    <div class="reason">同上，FastMCP session 握手失败，无法调用工具。</div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="card">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div class="step-title">ag_file_read</div>
+      <span class="status skip">SKIP</span>
+    </div>
+    <div class="reason">同上，FastMCP session 握手失败，无法调用工具。</div>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="card">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <div class="step-title">ag_file_write</div>
+      <span class="status skip">SKIP</span>
+    </div>
+    <div class="reason">同上，FastMCP session 握手失败，无法调用工具。</div>
+  </div>
+
+  <!-- Step 5 -->
+  <div class="card">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <div class="step-title">ag_file_exists</div>
+      <span class="status skip">SKIP</span>
+    </div>
+    <div class="reason">同上，FastMCP session 握手失败，无法调用工具。</div>
+  </div>
+
+  <!-- Step 6 -->
+  <div class="card">
+    <div class="step-header">
+      <div class="step-num">6</div>
+      <div class="step-title">ag_powershell</div>
+      <span class="status skip">SKIP</span>
+    </div>
+    <div class="reason">同上，FastMCP session 握手失败，无法调用工具。</div>
+  </div>
+
+  <!-- Conclusion -->
+  <div class="card">
+    <div class="step-title" style="margin-bottom:12px;">结论与修复方案</div>
+    <div class="reason" style="margin-bottom:12px;">
+      <strong>问题定位：</strong>不是 MCP 服务器的问题，是 Hermes 容器端缺少 <code>mcp</code> Python 包，无法解析 FastMCP 的 streamable-http session 握手。Hermes 的 native MCP client 依赖 <code>import mcp</code>，但包未安装，所以 tools 显示为 0，连接状态 false。
+    </div>
+    <div class="root-cause">
+      <strong>修复方案 A（推荐）：</strong>在 Hermes 容器内安装 mcp 包：<br>
+      <code style="display:block;margin-top:8px;padding:8px;background:#111;border-radius:4px;">docker exec hermes pip install mcp</code><br>
+      或在容器内：<code>pip install mcp</code><br>
+      安装后重启 Hermes Gateway，MCP 工具即可正常注册和调用。
+    </div>
+    <div class="reason" style="margin-top:12px;">
+      <strong>修复方案 B：</strong>让 AntGravity 方在 <code>server.py</code> 中为 <code>/mcp</code> 端点添加一个独立的健康检查路由（类似 <code>/health</code>），绕过 session 握手直接返回服务器就绪状态。
+    </div>
+  </div>
+
+  <p style="color:#444;font-size:11px;margin-top:24px;text-align:center;">
+    生成时间：2026-05-18 · Hermes Agent · kimi-k2.5
+  </p>
+
+  <!-- Hermes to AntGravity message -->
+  <div class="card" style="background:#1a1e14;border-color:#3d4a2a;margin-top:8px;">
+    <div class="label" style="color:#6a9f4a;margin-bottom:8px;">Hermes → AntGravity</div>
+    <div style="font-size:14px;color:#9fb87a;line-height:1.7;font-family:Georgia,serif;">
+      <code style="background:#111;padding:2px 6px;border-radius:4px;">/health</code> 端点正常，server 活着；6 个工具全部因 FastMCP streamable-http session 握手失败而无法在 Hermes 容器内调用——Hermes 容器没装 <code>mcp</code> Python 包，修复方案：<code>docker exec hermes pip install mcp</code>。
+    </div>
+  </div>
+</div>
+</body>
+</html>

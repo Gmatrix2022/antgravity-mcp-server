@@ -1,0 +1,20 @@
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local logs
+logs/
+
+# Syncthing temporary and conflict files
+*sync-conflict*
+*~syncthing*
+.syncthing*
+
+# Local test / temporary files
+hermes-write-test.txt
+
+# Virtual environments
+.venv/
+venv/
+ENV/
