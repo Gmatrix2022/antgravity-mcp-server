@@ -116,6 +116,7 @@ from tools.kanban_tools import (
     ag_kanban_create, ag_kanban_update, ag_kanban_comment, ag_kanban_complete,
     ag_kanban_list, ag_kanban_get
 )
+from tools.ui_tools import ag_popup_message
 
 # ── 注册 Stream 相关的 4 个工具 ──
 mcp.tool(name="ag_record_step")(ag_record_step)
@@ -131,7 +132,20 @@ mcp.tool(name="ag_kanban_complete")(ag_kanban_complete)
 mcp.tool(name="ag_kanban_list")(ag_kanban_list)
 mcp.tool(name="ag_kanban_get")(ag_kanban_get)
 
+# ── 注册 UI 相关的 1 个工具 ──
+mcp.tool(
+    name="ag_popup_message",
+    annotations={
+        "title": "Popup Window Message",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)(ag_popup_message)
+
 logger.info("Phase 5 流与看板管理的 10 个新工具已成功注册至 antgravity_mcp 实例！")
+logger.info("UI 弹窗工具 ag_popup_message 注册成功！")
 
 
 # ── 辅助：环境探测 ────────────────────────────────────────────────────────
@@ -546,11 +560,179 @@ async def tool_pptx_create_slide(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  应用入口：使用 FastMCP 的 Starlette app 作为基础，注入 /health 路由
+#  Phase 6：跨智能体实时消息通道（Hermes ↔ Antigravity 直推）
 #
-#  关键：FastMCP.streamable_http_app() 返回 Starlette 实例，其 lifespan 包含
-#  StreamableHTTPSessionManager.run()（初始化 task group），必须保留。
-#  直接在该 Starlette app 上添加自定义路由，而不是 mount 到外部 FastAPI。
+#  使用 agentapi.bat 的 send-message CLI 将消息真实推送到 Antigravity 对话
+# ═══════════════════════════════════════════════════════════════════════════
+import subprocess
+import os
+
+@mcp.tool(
+    name="ag_send_to_antigravity",
+    annotations={
+        "title": "Send Message to Antigravity",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+)
+async def ag_send_to_antigravity(
+    message: str = Field(..., description="要发送给 Antigravity 的消息内容"),
+    conversation_id: str = Field(default="", description="可选：指定目标对话ID。不传则自动寻找最新活跃的对话"),
+    origin_platform: str = Field(default="", description="发信平台 (如 discord, feishu)"),
+    origin_chat_id: str = Field(default="", description="发信群组/聊天ID"),
+    origin_thread_id: str = Field(default="", description="发信线索ID"),
+) -> str:
+    """
+    【跨智能体直推】将消息实时推送给 Antigravity 对话代理。
+
+    此工具调用 Antigravity 客户端本地暴露的 ACP/CLI (agentapi.bat)，
+    直接将消息作为事件强行塞入 AI 代理的上下文，实现真正的 Push 唤醒。
+
+    Args:
+        message: 消息正文
+        conversation_id: 目标对话ID（留空则自动发给最新对话）
+    """
+    try:
+        # 优先加载 Antigravity 环境变量 (如果从系统服务运行，会缺少 ANTIGRAVITY_LS_ADDRESS 等)
+        env_vars = os.environ.copy()
+        env_file = os.path.join(os.path.dirname(__file__), "ag_env.json")
+        if os.path.exists(env_file):
+            try:
+                with open(env_file, "r") as f:
+                    ag_envs = json.load(f)
+                    env_vars.update(ag_envs)
+            except Exception as e:
+                logger.error(f"Failed to load ag_env.json: {e}")
+
+        # 如果未指定 conversation_id，自动寻找
+        if not conversation_id:
+            # 1. 优先尝试从环境变量 metadata 获取精确的活跃对话 ID
+            meta_str = env_vars.get("ANTIGRAVITY_SOURCE_METADATA")
+            if meta_str:
+                try:
+                    meta = json.loads(meta_str)
+                    if "tool" in meta and "conversationId" in meta["tool"]:
+                        conversation_id = meta["tool"]["conversationId"]
+                except Exception as e:
+                    logger.error(f"Failed to parse ANTIGRAVITY_SOURCE_METADATA: {e}")
+            
+            # 2. Fallback: 寻找最新修改的脑区目录
+            if not conversation_id:
+                brain_dir = r"C:\Users\keche\.gemini\antigravity\brain"
+                if os.path.exists(brain_dir):
+                    dirs = [os.path.join(brain_dir, d) for d in os.listdir(brain_dir) if os.path.isdir(os.path.join(brain_dir, d))]
+                    dirs.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+                    if dirs:
+                        conversation_id = os.path.basename(dirs[0])
+            
+        if not conversation_id:
+            return json.dumps({"ok": False, "error": "Could not determine target conversation_id"})
+
+        # 使用底层的 language_server.exe 直接通信，绕过 .bat 和 cmd.exe 解决 UTF-8 参数乱码问题
+        agentapi_path = r"C:\Users\keche\AppData\Local\Programs\Antigravity\resources\bin\language_server.exe"
+        if not os.path.exists(agentapi_path):
+            return json.dumps({"ok": False, "error": f"language_server.exe not found at {agentapi_path}"})
+
+        # 构建强制输出对话的 Prompt 包装
+        formatted_message = (
+            f"📥 **[Message from Hermes Agent]** 📥\n"
+            f"<hermes_request>\n{message}\n</hermes_request>\n\n"
+            f"【System Instruction】: You have received a task/message from Hermes. "
+            f"Before or while fulfilling the request, you MUST explicitly output the conversation in the chat box for the user to see, using a format similar to:\n"
+            f"**Hermes 任务**: <summarize Hermes's request>\n"
+            f"**我的回复/动作**: <what you are doing or replying>\n"
+            f"Then fulfill the task.\n\n"
+            f"【CRITICAL Auto-Sync Requirement】: To satisfy the real-time auto-sync requirement, you MUST actively call the `ag_reply_to_hermes` tool at the end of your response to push your work back to Hermes. "
+            f"You MUST pass the exact routing metadata when calling it: origin_platform='{origin_platform}', origin_chat_id='{origin_chat_id}', origin_thread_id='{origin_thread_id}'."
+        )
+
+        # 构建并执行命令 (直接调用并注入 agentapi 子命令)
+        cmd = [agentapi_path, "agentapi", "send-message", conversation_id, formatted_message]
+        logger.info(f"Executing push to Antigravity: {' '.join(cmd)}")
+        
+        # 必须避免 shell=True 导致注入，注入自定义环境上下文
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", creationflags=subprocess.CREATE_NO_WINDOW, env=env_vars)
+        
+        if result.returncode == 0:
+            return json.dumps({
+                "ok": True, 
+                "delivered": True, 
+                "conversation_id": conversation_id,
+                "output": result.stdout.strip()
+            }, ensure_ascii=False)
+        else:
+            return json.dumps({
+                "ok": False,
+                "error": result.stderr.strip() or result.stdout.strip()
+            })
+    except Exception as e:
+        logger.error(f"Push to Antigravity failed: {e}")
+        return json.dumps({"ok": False, "error": str(e)})
+
+
+@mcp.tool()
+def ag_reply_to_hermes(message: str, origin_platform: str = "", origin_chat_id: str = "", origin_thread_id: str = "") -> str:
+    """
+    【跨智能体回推】将 Antigravity 的回复通过 HTTP POST 强行打回给 Hermes (通过 8642 端口)。
+    
+    Args:
+        message: 要回传给 Hermes 的消息内容
+        origin_platform: 发起任务的平台 (例如 discord, feishu)
+        origin_chat_id: 发起任务的聊天或频道 ID
+        origin_thread_id: 发起任务的线索或帖子 ID
+    """
+    import urllib.request
+    import urllib.error
+    
+    url = "http://192.168.0.126:8642/v1/chat/completions"
+    headers = {
+        "Authorization": "Bearer Dr3yQBaaEbReE_KuICf8o65rZLGVeTb7lJrZE9rfk2I",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": "gpt-5.4",
+        "messages": [
+            {
+                "role": "user",
+                "content": f"[ANTIGRAVITY_REPLY] 【Anti Gravity 桌面】\n{message}\n【/Anti Gravity】"
+            }
+        ],
+        "origin_platform": origin_platform,
+        "origin_chat_id": origin_chat_id,
+        "origin_thread_id": origin_thread_id
+    }
+    
+    try:
+        req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=120) as response:
+            status_code = response.getcode()
+            response_body = response.read().decode('utf-8')
+            return json.dumps({
+                "ok": True,
+                "status_code": status_code,
+                "response_body": response_body
+            }, ensure_ascii=False)
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8') if e.fp else str(e)
+        return json.dumps({
+            "ok": False,
+            "status_code": e.code,
+            "error": error_body
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({
+            "ok": False,
+            "error": str(e)
+        }, ensure_ascii=False)
+
+logger.info("Phase 6 跨智能体消息通道工具 ag_send_to_antigravity (CLI 强推版) 已注册！")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  应用入口：使用 FastMCP 的 Starlette app 作为基础，注入路由
 # ═══════════════════════════════════════════════════════════════════════════
 
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -560,20 +742,18 @@ from starlette.routing import Route
 async def health_endpoint(request: Request):
     """Phase 0 健康检查端点"""
     logger.info("Health check called")
-    return JSONResponse({"ok": True, "service": "antgravity-mcp", "version": "0.1.0", "port": 9000})
-
+    return JSONResponse({"ok": True, "service": "antgravity-mcp", "version": "0.3.0", "port": 9000})
 
 # 获取 FastMCP Starlette app（含正确的 lifespan/task group）
 app = mcp.streamable_http_app()
 
 # 允许任意 Host header（修复 Hermes 容器跨主机访问 421 问题）
-# 容器内请求携带 Host: 192.168.0.124:9000，Starlette 默认拒绝导致 421
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 
-# 在现有路由列表头部插入 /health 路由
+# 注入路由
 app.routes.insert(0, Route("/health", endpoint=health_endpoint, methods=["GET"]))
 
-logger.info("AntGravity MCP Server 路由配置完成: /health + /mcp（TrustedHostMiddleware 已启用）")
+logger.info("AntGravity MCP Server 路由配置完成: /health + /mcp")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
